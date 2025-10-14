@@ -3,7 +3,7 @@
 unsigned char arduinoID;
 serial::Serial arduinoPort;
 void Arduino::serinit(){
-    arduinoPort.setPort("/dev/ttyACM_B");//选择要开启的串口号
+    arduinoPort.setPort("/dev/ttyS3");//选择要开启的串口号
     arduinoPort.setBaudrate(115200);//设置波特率
     arduinoPort.open();
 };

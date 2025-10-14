@@ -25,9 +25,9 @@ public:
     ImprovedMid360Node() : Node("improved_mid360")
     {
         // 参数声明
-        declare_parameter("publish_rate", 30.0);  // 降低到50Hz
+        declare_parameter("publish_rate", 40.0);  // 降低到50Hz
         declare_parameter("height_fusion_enable", true);
-        declare_parameter("max_data_age_ms", 100.0);  // 最大数据年龄100ms
+        declare_parameter("max_data_age_ms", 300.0);  // 最大数据年龄100ms
         declare_parameter("height_filter_alpha", 0.8);  // 低通滤波系数
         
         publish_rate_ = get_parameter("publish_rate").as_double();
@@ -104,7 +104,7 @@ private:
         if (!latest_odom_.valid) {
             RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 1000, 
                 "Invalid lidar odometry data received");
-                 Arduino::loud();
+               // Arduino::loud();
         }
     }
     
@@ -186,7 +186,7 @@ private:
         bool odom_ok = odom.valid && is_data_fresh(odom.timestamp);
         
         if (!odom_ok) {
-             Arduino::loud();
+             //Arduino::loud();
             RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 1000,
                 "No valid/fresh odometry data available");
                 

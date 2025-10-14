@@ -22,11 +22,10 @@ find_package(tf2_geometry_msgs REQUIRED)
 find_package(tf2_ros REQUIRED)
 find_package(serial REQUIRED)
 find_package(nav_msgs REQUIRED)
-find_package(quadrotor_msgs REQUIRED)
 
-find_package(nlohmann_json REQUIRED)
 
-find_package(visualization_msgs REQUIRED)
+
+
 
 # 包含头文件目录
 include_directories(
@@ -98,20 +97,20 @@ ament_target_dependencies(fly_px4
   geometry_msgs
   mavros_msgs
   std_msgs
-  visualization_msgs
+
   std_srvs
   tf2
   tf2_geometry_msgs
   tf2_ros
-  nlohmann_json
+
   serial
   nav_msgs
-  quadrotor_msgs
+
 )
 ament_target_dependencies(fuck_mid360
   rclcpp
   geometry_msgs
-  visualization_msgs
+
   mavros_msgs
   std_msgs
   std_srvs
@@ -120,7 +119,7 @@ ament_target_dependencies(fuck_mid360
   tf2_ros
   serial
   nav_msgs
-  quadrotor_msgs
+
 )
 
 
@@ -152,10 +151,10 @@ ament_export_dependencies(
   tf2
   tf2_geometry_msgs
   tf2_ros
-  quadrotor_msgs
-  nlohmann_json
+
+
   serial
-  visualization_msgs
+
 )
 
 ament_export_include_directories(include)
