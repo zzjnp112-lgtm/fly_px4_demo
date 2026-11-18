@@ -78,13 +78,13 @@
     <!-- 无人机（追踪者） -->
     <include>
       <uri>model://x500_mid360</uri>
-      <pose>0 0 1.1 0 0 0</pose>
+      <pose>0 0 0 0 0 0</pose>
     </include>
 
     <!-- 地面小车（追踪目标） -->
     <include>
       <uri>model://car_mixed</uri>
-      <pose>3 0 0 0 0 0</pose>
+      <pose>1 0 0 0 0 0</pose>
     </include>
 
   </world>

@@ -1,0 +1,19 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>qr_tracking</name>
+  <version>0.0.0</version>
+  <description>视觉追踪节点：订阅仿真相机图像，检测目标并发布像素坐标</description>
+  <maintainer email="zzjnp112@gmail.com">zzj</maintainer>
+  <license>Apache License 2.0</license>
+
+  <exec_depend>rclpy</exec_depend>
+  <exec_depend>sensor_msgs</exec_depend>
+  <exec_depend>cv_bridge</exec_depend>
+  <exec_depend>geometry_msgs</exec_depend>
+  <exec_depend>std_msgs</exec_depend>
+  <exec_depend>python3-opencv</exec_depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>
