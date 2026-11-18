@@ -3,7 +3,7 @@
 
     <!-- 首先包含原始模型 -->
     <include merge="true">
-      <uri>file:///home/duke/PX4-Autopilot/Tools/simulation/gz/models/x500_base/model.sdf</uri>
+      <uri>model://x500_base/model.sdf</uri>
     </include>
 
     <!-- 添加相机链接 -->

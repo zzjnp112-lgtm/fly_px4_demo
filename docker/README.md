@@ -137,6 +137,60 @@ docker stop px4sim && docker rm px4sim
 
 ---
 
+## 附：gz-sim 仿真（x500_mid360 + camer_bridge + FAST-LIO）
+
+这是**另一条仿真路径**（不用 MAVROS，用 gz-sim + gz-transport 桥接，喂给 FAST-LIO / ego-planner）。
+
+**一键启动**（headless；`GUI=1` 前缀则带窗口）：
+
+```bash
+docker exec -it px4sim bash /root/fly_px4_demo/docker/start_gz_sim.sh
+```
+
+脚本做的事：设 `GZ_SIM_RESOURCE_PATH` → 起 gz-sim 加载 `custom_world.sdf` → spawn `x500_mid360` 模型 → 起 `time_bridge` + `camer_bridge`。
+
+**手动逐步**（等价命令）：
+
+```bash
+docker exec -it px4sim bash
+export GZ_SIM_RESOURCE_PATH=/root/fly_px4_demo/src/models:/root/PX4-Autopilot/Tools/simulation/gz/models
+source /opt/ros/humble/setup.bash && source /root/ws/install/setup.bash
+
+# 终端 A：gz-sim（-s=headless）
+gz sim -s -r /root/fly_px4_demo/src/simulation_uav/simulation_fly/config/custom_world.sdf
+
+# 终端 B：spawn 无人机模型
+gz service -s /world/custom_world/create --reqtype gz.msgs.EntityFactory \
+  --reptype gz.msgs.Boolean --timeout 10000 \
+  --req 'sdf_filename: "/root/fly_px4_demo/src/models/x500_mid360/model.sdf", name: "x500_mid360"'
+
+# 终端 C：桥接
+ros2 run simulation_fly time_bridge
+ros2 run simulation_fly camer_bridge --ros-args --params-file \
+  /root/fly_px4_demo/src/simulation_uav/simulation_fly/config/camera_bridge.yaml
+```
+
+**验证数据流**：
+
+```bash
+ros2 topic hz /drone_0_/lidar/points        # 雷达点云（FAST-LIO 用）
+ros2 topic hz /drone_0_/camera/image_raw    # 下视 gemini2
+ros2 topic hz lidar/imu/data                # 雷达 IMU
+```
+
+> headless 无 GPU 时相机/点云频率会偏低（软件渲染慢），带 GPU 后恢复正常。
+
+**关键 topic 映射**（x500_mid360 自定义传感器是全局 topic，不是 `/world/...` 作用域）：
+
+| gz topic | 类型 | ROS2 topic |
+|---|---|---|
+| `/gemini2/rgb/image` | Image | `/drone_0_/camera/image_raw` |
+| `/front_cam/rgb/image` | Image | `/drone_0_/front_cam/image_raw` |
+| `/mid360/scan/points` | PointCloudPacked | `/drone_0_/lidar/points` |
+| `/mid360/imu` | IMU | `lidar/imu/data` |
+
+---
+
 ## 关键配置备忘（踩坑记录）
 
 | 项 | 值 |

@@ -7,12 +7,9 @@
 #include <gz/transport/Node.hh>
 #include <gz/msgs/image.pb.h>
 #include <gz/msgs/imu.pb.h>
-#include <gz/msgs/laserscan.pb.h>
 #include <gz/msgs/pointcloud_packed.pb.h>
 #include <rosgraph_msgs/msg/clock.hpp>
 #include <gz/msgs/clock.pb.h>
-#include <cmath>
-#include <limits>
 #include <cstring>
 #include <csignal>
 #include <memory>
@@ -21,21 +18,19 @@
 /**
  * gz-sim → ROS2 桥接节点（适配 x500_mid360 模型）。
  *
- * gz-sim 传感器话题带作用域，完整格式为：
- *   /world/<world_name>/model/<model_name>/link/<link>/sensor/<sensor>/<topic>
+ * 注意：x500_mid360 的自定义传感器都显式写了 <topic>，gz-sim 会把这些
+ * topic 发布为【全局 topic】（不带 /world/... 作用域）。实测 `gz topic -l`：
+ *   - 下视 gemini2 相机: /gemini2/rgb/image        (gz.msgs.Image)
+ *   - 前视相机:          /front_cam/rgb/image      (gz.msgs.Image)
+ *   - MID360 雷达点云:   /mid360/scan/points       (gz.msgs.PointCloudPacked)
+ *   - MID360 IMU:        /mid360/imu               (gz.msgs.IMU)
  *
- * 对应 x500_mid360 模型的传感器：
- *   - 下视 gemini2 相机: link=camera_link, sensor=gemini2_rgb, topic=gemini2/rgb/image
- *   - 前视相机:          link=front_camera_link, sensor=front_camera_rgb, topic=front_cam/rgb/image
- *   - MID360 雷达:       link=lidar_sensor_link, sensor=mid360_lidar, topic=mid360/scan
- *   - MID360 IMU:        link=lidar_sensor_link, sensor=mid360_imu,   topic=mid360/imu
+ * 只有 x500_base 里【没写 <topic>】的传感器才走
+ * /world/<world>/model/<model>/link/<link>/sensor/<sensor>/<type> 作用域。
  *
  * 下游消费（FAST-LIO mid360.yaml）：
  *   - 点云 PointCloud2 -> /drone_0_/lidar/points
  *   - IMU              -> lidar/imu/data
- *
- * 注意：若 gz-sim 版本对话题作用域处理不同，用 `gz topic -l` 查看实际话题名后，
- * 改 world_name/model_name 即可（link/sensor/topic 已按模型写死）。
  */
 class GzToRos2Bridge : public rclcpp::Node
 {
@@ -43,28 +38,31 @@ public:
     GzToRos2Bridge()
         : Node("gz_to_ros2_bridge")
     {
-        // ---------------- world / model 名 ----------------
-        this->declare_parameter<std::string>("world_name", "custom_world");
-        this->declare_parameter<std::string>("model_name", "x500_mid360");
-        world_name_ = this->get_parameter("world_name").as_string();
-        model_name_ = this->get_parameter("model_name").as_string();
+        // ---------------- gz 全局 topic ----------------
+        this->declare_parameter<std::string>("gz_rgb_topic", "/gemini2/rgb/image");
+        this->declare_parameter<std::string>("gz_front_rgb_topic", "/front_cam/rgb/image");
+        this->declare_parameter<std::string>("gz_lidar_points_topic", "/mid360/scan/points");
+        this->declare_parameter<std::string>("gz_lidar_imu_topic", "/mid360/imu");
+        gz_rgb_topic_         = this->get_parameter("gz_rgb_topic").as_string();
+        gz_front_rgb_topic_   = this->get_parameter("gz_front_rgb_topic").as_string();
+        gz_lidar_points_topic_= this->get_parameter("gz_lidar_points_topic").as_string();
+        gz_lidar_imu_topic_   = this->get_parameter("gz_lidar_imu_topic").as_string();
 
-        // ---------------- ROS2 输出话题 ----------------
+        // ---------------- ROS2 输出 topic ----------------
         this->declare_parameter<std::string>("ros_rgb_topic", "/drone_0_/camera/image_raw");
         this->declare_parameter<std::string>("ros_front_rgb_topic", "/drone_0_/front_cam/image_raw");
         this->declare_parameter<std::string>("ros_lidar_points_topic", "/drone_0_/lidar/points");
         this->declare_parameter<std::string>("lidar_imu_topic", "lidar/imu/data");
-
         ros_rgb_topic_          = this->get_parameter("ros_rgb_topic").as_string();
         ros_front_rgb_topic_    = this->get_parameter("ros_front_rgb_topic").as_string();
         ros_lidar_points_topic_ = this->get_parameter("ros_lidar_points_topic").as_string();
         lidar_imu_topic_        = this->get_parameter("lidar_imu_topic").as_string();
 
         // ---------------- 发布器 ----------------
-        rgb_pub_         = this->create_publisher<sensor_msgs::msg::Image>(ros_rgb_topic_, 100);
-        front_rgb_pub_   = this->create_publisher<sensor_msgs::msg::Image>(ros_front_rgb_topic_, 100);
-        lidar_imu_pub_   = this->create_publisher<sensor_msgs::msg::Imu>(lidar_imu_topic_, 100);
-        lidar_points_pub_= this->create_publisher<sensor_msgs::msg::PointCloud2>(ros_lidar_points_topic_, 100);
+        rgb_pub_          = this->create_publisher<sensor_msgs::msg::Image>(ros_rgb_topic_, 100);
+        front_rgb_pub_    = this->create_publisher<sensor_msgs::msg::Image>(ros_front_rgb_topic_, 100);
+        lidar_imu_pub_    = this->create_publisher<sensor_msgs::msg::Imu>(lidar_imu_topic_, 100);
+        lidar_points_pub_ = this->create_publisher<sensor_msgs::msg::PointCloud2>(ros_lidar_points_topic_, 100);
         clock_pub_ = this->create_publisher<rosgraph_msgs::msg::Clock>("/clock", 10);
 
         // ---------------- CameraInfo 发布器 ----------------
@@ -73,40 +71,33 @@ public:
         rgb_info_pub_       = this->create_publisher<sensor_msgs::msg::CameraInfo>(ros_rgb_topic_ + "_camera_info", info_qos);
         front_rgb_info_pub_ = this->create_publisher<sensor_msgs::msg::CameraInfo>(ros_front_rgb_topic_ + "_camera_info", info_qos);
 
-        // 相机内参：1280x720, hfov=1.5016 -> fx≈685.9, cx=640, cy=360（与模型一致）
         initializeCameraInfo();
 
-        // ---------------- 构造 gz-sim 作用域话题 ----------------
-        const std::string gz_rgb_topic       = scopedTopic("camera_link",       "gemini2_rgb",     "gemini2/rgb/image");
-        const std::string gz_front_rgb_topic = scopedTopic("front_camera_link", "front_camera_rgb","front_cam/rgb/image");
-        const std::string gz_lidar_scan      = scopedTopic("lidar_sensor_link", "mid360_lidar",    "mid360/scan");
-        const std::string gz_lidar_imu       = scopedTopic("lidar_sensor_link", "mid360_imu",      "mid360/imu");
-
         // ---------------- Gazebo 订阅 ----------------
-        if (!gz_node_.Subscribe(gz_rgb_topic, &GzToRos2Bridge::rgbCallback, this))
-            RCLCPP_ERROR(this->get_logger(), "订阅 RGB 失败: %s", gz_rgb_topic.c_str());
+        if (!gz_node_.Subscribe(gz_rgb_topic_, &GzToRos2Bridge::rgbCallback, this))
+            RCLCPP_ERROR(this->get_logger(), "订阅 RGB 失败: %s", gz_rgb_topic_.c_str());
         else
-            RCLCPP_INFO(this->get_logger(), "成功订阅 RGB: %s", gz_rgb_topic.c_str());
+            RCLCPP_INFO(this->get_logger(), "成功订阅 RGB: %s", gz_rgb_topic_.c_str());
 
-        if (!gz_node_.Subscribe(gz_front_rgb_topic, &GzToRos2Bridge::frontRgbCallback, this))
-            RCLCPP_ERROR(this->get_logger(), "订阅前视 RGB 失败: %s", gz_front_rgb_topic.c_str());
+        if (!gz_node_.Subscribe(gz_front_rgb_topic_, &GzToRos2Bridge::frontRgbCallback, this))
+            RCLCPP_ERROR(this->get_logger(), "订阅前视 RGB 失败: %s", gz_front_rgb_topic_.c_str());
         else
-            RCLCPP_INFO(this->get_logger(), "成功订阅前视 RGB: %s", gz_front_rgb_topic.c_str());
+            RCLCPP_INFO(this->get_logger(), "成功订阅前视 RGB: %s", gz_front_rgb_topic_.c_str());
 
         if (!gz_node_.Subscribe("/clock", &GzToRos2Bridge::gzClockCallback, this))
             RCLCPP_ERROR(this->get_logger(), "订阅 Gazebo Clock 失败: /clock");
         else
             RCLCPP_INFO(this->get_logger(), "成功订阅 Gazebo Clock: /clock");
 
-        if (!gz_node_.Subscribe(gz_lidar_scan, &GzToRos2Bridge::lidarScanCallback, this))
-            RCLCPP_ERROR(this->get_logger(), "订阅激光雷达扫描失败: %s", gz_lidar_scan.c_str());
+        if (!gz_node_.Subscribe(gz_lidar_points_topic_, &GzToRos2Bridge::lidarPointsCallback, this))
+            RCLCPP_ERROR(this->get_logger(), "订阅雷达点云失败: %s", gz_lidar_points_topic_.c_str());
         else
-            RCLCPP_INFO(this->get_logger(), "成功订阅激光雷达扫描: %s", gz_lidar_scan.c_str());
+            RCLCPP_INFO(this->get_logger(), "成功订阅雷达点云: %s", gz_lidar_points_topic_.c_str());
 
-        if (!gz_node_.Subscribe(gz_lidar_imu, &GzToRos2Bridge::gzLidarImuCallback, this))
-            RCLCPP_ERROR(this->get_logger(), "订阅激光雷达 IMU 失败: %s", gz_lidar_imu.c_str());
+        if (!gz_node_.Subscribe(gz_lidar_imu_topic_, &GzToRos2Bridge::gzLidarImuCallback, this))
+            RCLCPP_ERROR(this->get_logger(), "订阅雷达 IMU 失败: %s", gz_lidar_imu_topic_.c_str());
         else
-            RCLCPP_INFO(this->get_logger(), "成功订阅激光雷达 IMU: %s", gz_lidar_imu.c_str());
+            RCLCPP_INFO(this->get_logger(), "成功订阅雷达 IMU: %s", gz_lidar_imu_topic_.c_str());
 
         RCLCPP_INFO(this->get_logger(), "gz-sim → ROS2 桥启动");
         RCLCPP_INFO(this->get_logger(), "下视 RGB -> %s", ros_rgb_topic_.c_str());
@@ -118,13 +109,6 @@ public:
     }
 
 private:
-    // 构造 gz-sim 作用域话题
-    std::string scopedTopic(const std::string& link, const std::string& sensor, const std::string& topic)
-    {
-        return "/world/" + world_name_ + "/model/" + model_name_ +
-               "/link/" + link + "/sensor/" + sensor + "/" + topic;
-    }
-
     void initializeCameraInfo()
     {
         // 1280x720, hfov=1.5016 -> fx≈685.9
@@ -198,59 +182,46 @@ private:
         lidar_imu_pub_->publish(ros_msg);
     }
 
-    // ---------------- 激光雷达扫描 -> PointCloud2 ----------------
-    // gz gpu_lidar 输出的是三维 LaserScan（水平 360 x 垂直多线），
-    // FAST-LIO 需要 PointCloud2，这里把 (水平角, 垂直角, 距离) 转成三维点云。
-    void lidarScanCallback(const gz::msgs::LaserScan &gz_msg)
+    // ---------------- 雷达点云回调（gz PointCloudPacked -> ROS2 PointCloud2） ----------------
+    void lidarPointsCallback(const gz::msgs::PointCloudPacked &gz_msg)
     {
-        const int h_count = static_cast<int>(gz_msg.count());        // 水平采样数
-        const int v_count = static_cast<int>(gz_msg.vertical_count()); // 垂直采样数
-        const int total = h_count * v_count;
-        if (total <= 0 || gz_msg.ranges_size() < total) return;
-
-        sensor_msgs::msg::PointCloud2 cloud;
+        sensor_msgs::msg::PointCloud2 ros_msg;
         auto s = gz_msg.header().stamp();
-        cloud.header.stamp.sec = s.sec();
-        cloud.header.stamp.nanosec = s.nsec();
-        cloud.header.frame_id = "lidar_sensor_link";
-        cloud.height = 1;
-        cloud.width = total;
-        cloud.is_dense = false;
-        cloud.is_bigendian = false;
+        ros_msg.header.stamp.sec = s.sec();
+        ros_msg.header.stamp.nanosec = s.nsec();
+        ros_msg.header.frame_id = "lidar_sensor_link";
 
-        cloud.fields.resize(4);
-        cloud.fields[0].name = "x";         cloud.fields[0].offset = 0;  cloud.fields[0].datatype = sensor_msgs::msg::PointField::FLOAT32; cloud.fields[0].count = 1;
-        cloud.fields[1].name = "y";         cloud.fields[1].offset = 4;  cloud.fields[1].datatype = sensor_msgs::msg::PointField::FLOAT32; cloud.fields[1].count = 1;
-        cloud.fields[2].name = "z";         cloud.fields[2].offset = 8;  cloud.fields[2].datatype = sensor_msgs::msg::PointField::FLOAT32; cloud.fields[2].count = 1;
-        cloud.fields[3].name = "intensity"; cloud.fields[3].offset = 12; cloud.fields[3].datatype = sensor_msgs::msg::PointField::FLOAT32; cloud.fields[3].count = 1;
-        cloud.point_step = 16;
-        cloud.row_step = 16 * total;
-        cloud.data.resize(static_cast<size_t>(16) * total);
+        ros_msg.height = 1;
+        ros_msg.width = gz_msg.data().size() / gz_msg.point_step();
+        ros_msg.is_bigendian = false;
+        ros_msg.point_step = gz_msg.point_step();
+        ros_msg.row_step = ros_msg.width * ros_msg.point_step;
+        ros_msg.is_dense = true;
 
-        float* p = reinterpret_cast<float*>(cloud.data.data());
-        for (int j = 0; j < v_count; ++j) {
-            const double va = gz_msg.vertical_angle_min() + j * gz_msg.vertical_angle_step();
-            const double cos_va = std::cos(va), sin_va = std::sin(va);
-            for (int i = 0; i < h_count; ++i) {
-                const double ha = gz_msg.angle_min() + i * gz_msg.angle_step();
-                const double cos_ha = std::cos(ha), sin_ha = std::sin(ha);
-                const double r = gz_msg.ranges(j * h_count + i);
-                float* pt = p + (j * h_count + i) * 4;
-                if (r >= gz_msg.range_min() && r <= gz_msg.range_max() && std::isfinite(r)) {
-                    pt[0] = static_cast<float>(r * cos_va * cos_ha);
-                    pt[1] = static_cast<float>(r * cos_va * sin_ha);
-                    pt[2] = static_cast<float>(r * sin_va);
-                    pt[3] = (gz_msg.intensities_size() > j * h_count + i)
-                                ? static_cast<float>(gz_msg.intensities(j * h_count + i)) : 0.0f;
-                } else {
-                    pt[0] = std::numeric_limits<float>::quiet_NaN();
-                    pt[1] = std::numeric_limits<float>::quiet_NaN();
-                    pt[2] = std::numeric_limits<float>::quiet_NaN();
-                    pt[3] = 0.0f;
-                }
+        ros_msg.fields.clear();
+        for (const auto &field : gz_msg.field()) {
+            sensor_msgs::msg::PointField pf;
+            pf.name = field.name();
+            pf.offset = field.offset();
+            switch (field.datatype()) {
+                case gz::msgs::PointCloudPacked::Field::INT8:    pf.datatype = sensor_msgs::msg::PointField::INT8; break;
+                case gz::msgs::PointCloudPacked::Field::UINT8:   pf.datatype = sensor_msgs::msg::PointField::UINT8; break;
+                case gz::msgs::PointCloudPacked::Field::INT16:   pf.datatype = sensor_msgs::msg::PointField::INT16; break;
+                case gz::msgs::PointCloudPacked::Field::UINT16:  pf.datatype = sensor_msgs::msg::PointField::UINT16; break;
+                case gz::msgs::PointCloudPacked::Field::INT32:   pf.datatype = sensor_msgs::msg::PointField::INT32; break;
+                case gz::msgs::PointCloudPacked::Field::UINT32:  pf.datatype = sensor_msgs::msg::PointField::UINT32; break;
+                case gz::msgs::PointCloudPacked::Field::FLOAT32: pf.datatype = sensor_msgs::msg::PointField::FLOAT32; break;
+                case gz::msgs::PointCloudPacked::Field::FLOAT64: pf.datatype = sensor_msgs::msg::PointField::FLOAT64; break;
+                default: pf.datatype = sensor_msgs::msg::PointField::FLOAT32;
             }
+            pf.count = 1;
+            ros_msg.fields.push_back(pf);
         }
-        lidar_points_pub_->publish(cloud);
+
+        ros_msg.data.resize(gz_msg.data().size());
+        std::memcpy(ros_msg.data.data(), gz_msg.data().data(), gz_msg.data().size());
+
+        lidar_points_pub_->publish(ros_msg);
     }
 
     // ---------------- Gazebo Image → ROS Image ----------------
@@ -293,7 +264,8 @@ private:
     rclcpp::Publisher<sensor_msgs::msg::CameraInfo>::SharedPtr rgb_info_pub_, front_rgb_info_pub_;
     rclcpp::Publisher<rosgraph_msgs::msg::Clock>::SharedPtr clock_pub_;
 
-    std::string world_name_, model_name_;
+    std::string gz_rgb_topic_, gz_front_rgb_topic_;
+    std::string gz_lidar_points_topic_, gz_lidar_imu_topic_;
     std::string ros_rgb_topic_, ros_front_rgb_topic_;
     std::string ros_lidar_points_topic_;
     std::string lidar_imu_topic_;
