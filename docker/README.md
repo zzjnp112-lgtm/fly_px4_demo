@@ -3,6 +3,8 @@
 本目录提供 Docker 仿真环境，在 Ubuntu 20.04 宿主上跑 Ubuntu 22.04 + ROS2 Humble + PX4 SITL + Gazebo Classic + MAVROS。
 
 ---
+docker exec -it px4sim bash
+
 
 ## 一、一次性：装 Docker（宿主，需 sudo）
 

@@ -23,6 +23,9 @@
   <material name="camera_color">
     <color rgba="0.8 0.1 0.1 1"/>
   </material>
+  <material name="qr_material">
+    <texture filename="model://car_mixed/materials/textures/qr_code.png"/>
+  </material>
   <!-- base_link: 底盘平板, 原点位于地面 -->
   <link name="base_link">
     <visual>
@@ -199,63 +202,32 @@
     <child link="deck1_link"/>
     <origin rpy="0 0 0" xyz="0 0 0"/>
   </joint>
-  <!-- ============ Livox Mid-360 3D激光雷达: 平台顶面中央 ============ -->
-  <link name="lidar_link">
+    <!-- ============ 二维码标记: 顶面朝上，供无人机下视相机识别 ============ -->
+  <link name="qr_code_link">
     <visual>
       <origin rpy="0 0 0" xyz="0 0 0"/>
       <geometry>
-        <cylinder length="0.06" radius="0.0325"/>
+        <box size="0.15 0.15 0.002"/>
       </geometry>
-      <material name="lidar_color"/>
+      <material name="qr_material"/>
     </visual>
     <collision>
       <origin rpy="0 0 0" xyz="0 0 0"/>
       <geometry>
-        <cylinder length="0.06" radius="0.0325"/>
+        <box size="0.15 0.15 0.002"/>
       </geometry>
     </collision>
     <inertial>
-      <mass value="0.265"/>
-      <inertia ixx="0.0001494765625" ixy="0" ixz="0" iyy="0.0001494765625" iyz="0" izz="0.00013995312500000002"/>
+      <mass value="0.01"/>
+      <inertia ixx="1e-5" ixy="0" ixz="0" iyy="1e-5" iyz="0" izz="1e-5"/>
     </inertial>
   </link>
-  <joint name="lidar_joint" type="fixed">
+  <joint name="qr_code_joint" type="fixed">
     <parent link="deck1_link"/>
-    <child link="lidar_link"/>
-    <origin rpy="0 0 0" xyz="0 0 0.21000000000000002"/>
+    <child link="qr_code_link"/>
+    <origin rpy="0 0 0" xyz="0 0 0.181"/>
   </joint>
-  <gazebo reference="lidar_link">
-    <sensor name="lidar" type="gpu_lidar">
-      <topic>/scan</topic>
-      <update_rate>20</update_rate>
-      <!-- 实机 Mid-360 配置 20Hz -->
-      <always_on>true</always_on>
-      <visualize>true</visualize>
-      <lidar>
-        <scan>
-          <horizontal>
-            <!-- 720 线(0.5°) x 18 层 x 20Hz ≈ 26万点/s -->
-            <samples>720</samples>
-            <resolution>1</resolution>
-            <min_angle>-3.14159</min_angle>
-            <max_angle>3.14159</max_angle>
-          </horizontal>
-          <!-- Mid-360 垂直FOV: -7deg ~ +52deg -->
-          <vertical>
-            <samples>18</samples>
-            <resolution>1</resolution>
-            <min_angle>-0.1222</min_angle>
-            <max_angle>0.9076</max_angle>
-          </vertical>
-        </scan>
-        <range>
-          <min>0.1</min>
-          <max>40.0</max>
-          <resolution>0.01</resolution>
-        </range>
-      </lidar>
-    </sensor>
-  </gazebo>
+
   <!-- ============ 相机模组: 左右深度头(装饰) + 中央 RGB + 深度(depth_camera 仿真左右目合成的深度)
        话题对齐真机: /camera/color/image_raw、/camera/depth/image_raw ============ -->
   <link name="camera_mount_link">
