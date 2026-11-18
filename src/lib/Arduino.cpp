@@ -5,10 +5,15 @@ serial::Serial arduinoPort;
 void Arduino::serinit(){
     arduinoPort.setPort("/dev/ttyS3");//选择要开启的串口号
     arduinoPort.setBaudrate(115200);//设置波特率
-    arduinoPort.open();
+    try {
+        arduinoPort.open();
+    } catch (...) {
+        // 仿真/无物理串口环境：打开失败则静默跳过，不崩溃
+    }
 };
 
 void Arduino::send(){
+    if (!arduinoPort.isOpen()) return;  // 仿真环境无串口，直接返回
      unsigned char arduinolink[4] = { 0xfe, 0xfd, 0, 0};
     arduinolink[2] = arduinoID;
     arduinolink[3] = arduinoID%2;

@@ -1,0 +1,13 @@
+# camer_bridge（gz-sim → ROS2）参数
+# 节点名必须与 camer_bridge.cpp 里的 Node("gz_to_ros2_bridge") 一致
+gz_to_ros2_bridge:
+  ros__parameters:
+    # gz-sim 话题作用域：/world/<world_name>/model/<model_name>/link/<link>/sensor/<sensor>/<topic>
+    world_name: "custom_world"
+    model_name: "x500_mid360"
+
+    # ROS2 输出话题（需与下游 FAST-LIO / 视觉节点对齐）
+    ros_rgb_topic: "/drone_0_/camera/image_raw"        # 下视 gemini2 RGB
+    ros_front_rgb_topic: "/drone_0_/front_cam/image_raw"  # 前视 RGB
+    ros_lidar_points_topic: "/drone_0_/lidar/points"   # 三维点云（FAST-LIO 用）
+    lidar_imu_topic: "lidar/imu/data"                  # 雷达 IMU（FAST-LIO 用）

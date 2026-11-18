@@ -1,0 +1,87 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<sdf version='1.9'>
+  <model name='gemini2'>
+    <pose>0 0 0 0 0 0</pose>
+    <self_collide>false</self_collide>
+    <static>false</static>
+    <link name="camera_link">
+      <inertial>
+        <mass>0.098</mass>
+        <inertia>
+          <ixx>0.0000124604</ixx>
+          <ixy>0</ixy>
+          <ixz>0</ixz>
+          <iyy>0.0000735000</iyy>
+          <iyz>0</iyz>
+          <izz>0.0000712542</izz>
+        </inertia>
+      </inertial>
+      <visual name="gemini2/visual">
+        <geometry>
+          <box>
+            <size>0.09 0.025 0.03</size>
+          </box>
+        </geometry>
+        <material>
+          <ambient>0.05 0.05 0.05 1</ambient>
+          <diffuse>0.08 0.08 0.08 1</diffuse>
+          <specular>0.2 0.2 0.2 1</specular>
+        </material>
+      </visual>
+      <!-- 无 collision: 相机挪到起落架滑橇下方后(见 x500_mid360/model.sdf 的挂载 pose)
+           如果保留碰撞体,降落/起飞时会变成先于滑橇触地的新接触点,可能干扰起落架
+           的地面检测和飞行姿态。传感器数据不依赖 collision,只依赖 link 的 pose。 -->
+      <!-- RGB 镜头, 匹配实机 graph.py 使用的 720p 标定 (2026-07-08 实测):
+           fx=685.91 fy=685.78 cx=638.21 cy=360.37 @1280x720.
+           gz 由 hfov 生成内参: fx=(W/2)/tan(hfov/2)=640/tan(0.7508)≈685.9, cx=640, cy=360,
+           与实机一致 -> 仿真里 min_area/edge_margin 等像素级阈值和解算尺度直接通用 -->
+      <sensor name="gemini2_rgb" type="camera">
+        <gz_frame_id>camera_link</gz_frame_id>
+        <pose>0 0 0 0 0 0</pose>
+        <camera>
+          <horizontal_fov>1.5016</horizontal_fov>
+          <image>
+            <width>1280</width>
+            <height>720</height>
+          </image>
+          <clip>
+            <near>0.05</near>
+            <far>100</far>
+          </clip>
+        </camera>
+        <always_on>1</always_on>
+        <update_rate>30</update_rate>
+        <visualize>true</visualize>
+        <topic>gemini2/rgb/image</topic>
+      </sensor>
+      <!-- 深度镜头(主动立体红外), 对应规格: 深度 FOV H91°xV66°, 分辨率 1280x800@30fps, 量程 0.15-10m.
+           2026-07-14 停用: 无人订阅但 always_on 每帧白渲染 1280x800 float, 抢占 GPU 渲染线程,
+           造成 RGB 相机图像 stamp 落后画面内容 ~190ms -> 视觉全局坐标随速度漂移(bag 实测).
+           需要深度时整块取消注释, 并在 sim_pointlio.launch.py 里加对应 bridge.
+      <sensor name="gemini2_depth" type="depth_camera">
+        <gz_frame_id>camera_link</gz_frame_id>
+        <pose>0 0 0 0 0 0</pose>
+        <camera>
+          <horizontal_fov>1.588</horizontal_fov>
+          <image>
+            <width>1280</width>
+            <height>800</height>
+            <format>R_FLOAT32</format>
+          </image>
+          <clip>
+            <near>0.15</near>
+            <far>10.0</far>
+          </clip>
+        </camera>
+        <always_on>1</always_on>
+        <update_rate>30</update_rate>
+        <visualize>true</visualize>
+        <topic>gemini2/depth/image</topic>
+      </sensor>
+      -->
+
+      <gravity>true</gravity>
+      <velocity_decay />
+    </link>
+  </model>
+</sdf>
