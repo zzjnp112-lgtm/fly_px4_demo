@@ -6,6 +6,15 @@
     <magnetic_field>6e-06 2.3e-05 -4.2e-05</magnetic_field>
     <atmosphere type='adiabatic'/>
 
+    <!-- GPS 地理参考（NavSat 系统必需，缺失会导致 EKF 高度错乱、无人机失控爬升） -->
+    <spherical_coordinates>
+      <surface_model>EARTH_WGS84</surface_model>
+      <world_frame_orientation>ENU</world_frame_orientation>
+      <latitude_deg>47.397971057728974</latitude_deg>
+      <longitude_deg>8.546163739800146</longitude_deg>
+      <elevation>0</elevation>
+    </spherical_coordinates>
+
     <!-- 物理 -->
     <plugin filename="gz-sim-physics-system" name="gz::sim::systems::Physics"/>
 
@@ -26,9 +35,20 @@
     <!-- IMU（x500_base 里有 imu 传感器） -->
     <plugin filename="gz-sim-imu-system" name="gz::sim::systems::Imu"/>
 
-    <physics name="1ms" type="ignored">
-      <max_step_size>0.001</max_step_size>
+    <!-- 气压计（barometer，PX4 高度估计必需） -->
+    <plugin filename="gz-sim-air-pressure-system" name="gz::sim::systems::AirPressure"/>
+
+    <!-- 施加力/力矩（无人机电机推力，PX4 gz_bridge 控制必需） -->
+    <plugin filename="gz-sim-apply-link-wrench-system" name="gz::sim::systems::ApplyLinkWrench"/>
+
+    <!-- GPS/导航卫星（PX4 navsat 传感器必需） -->
+    <plugin filename="gz-sim-navsat-system" name="gz::sim::systems::NavSat"/>
+
+    <!-- 物理步长对齐 PX4 默认世界（250Hz，避免 1ms 步长拖慢实时仿真） -->
+    <physics type="ode">
+      <max_step_size>0.004</max_step_size>
       <real_time_factor>1.0</real_time_factor>
+      <real_time_update_rate>250</real_time_update_rate>
     </physics>
 
     <!-- 全局环境光：让地面/二维码始终可见，不受方向光角度影响 -->
@@ -75,13 +95,9 @@
       <cast_shadows>true</cast_shadows>
     </light>
 
-    <!-- 无人机（追踪者） -->
-    <include>
-      <uri>model://x500_mid360</uri>
-      <pose>0 0 0 0 0 0</pose>
-    </include>
+    <!-- 无人机由 PX4 gz_bridge 在原点 spawn（不要在 world 里再 include 静态无人机，避免重名冲突） -->
 
-    <!-- 地面小车（追踪目标） -->
+    <!-- 地面小车（追踪目标）：正下方，下视相机能看到顶面二维码 -->
     <include>
       <uri>model://car_mixed</uri>
       <pose>1 0 0 0 0 0</pose>

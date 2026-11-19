@@ -1,4 +1,4 @@
-<sdf version='1.11'>
+<sdf version="1.10">
   <model name='car_mixed'>
     <link name='base_link'>
       <inertial>
@@ -137,7 +137,7 @@
         <pose>0 0 0.18099999999999999 0 0 0</pose>
         <geometry>
           <box>
-            <size>0.14999999999999999 0.14999999999999999 0.002</size>
+            <size>0.2 0.2 0.002</size>
           </box>
         </geometry>
       </collision>
@@ -294,7 +294,7 @@
         <pose>0 0 0.18099999999999999 0 0 0</pose>
         <geometry>
           <box>
-            <size>0.14999999999999999 0.14999999999999999 0.002</size>
+            <size>0.2 0.2 0.002</size>
           </box>
         </geometry>
         <material>

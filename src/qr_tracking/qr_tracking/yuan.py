@@ -31,8 +31,8 @@ class QrNode(Node):
         self.sub = self.create_subscription(
             Image, image_topic, self.image_callback, 10)
 
-        # 无目标时的默认中心（图像中心 640x480）
-        self.default_center = Point(x=320.0, y=240.0, z=0.0)
+        # 无目标时的默认中心（图像中心 1280x720）
+        self.default_center = Point(x=640.0, y=360.0, z=0.0)
 
         self.get_logger().info(f'qr_node 启动，订阅 {image_topic}')
 
@@ -43,23 +43,35 @@ class QrNode(Node):
             self.get_logger().warn(f'图像转换失败: {e}')
             return
 
-        # 检测并解码二维码
-        data, bbox, _ = self.detector.detectAndDecode(frame)
+        # 只检测二维码位置（不解码：容器里 OpenCV 没链接 QUIRC，detectAndDecode 会报错且返回空 data）
+        retval, points = self.detector.detect(frame)
 
-        if data and bbox is not None and len(bbox) > 0:
-            # bbox 是 4 个角点，取中心
-            pts = np.asarray(bbox).reshape(-1, 2)
+        if retval and points is not None and len(points) > 0:
+            # points 是 4 个角点，取中心
+            pts = np.asarray(points).reshape(-1, 2)
             cx = float(pts[:, 0].mean())
             cy = float(pts[:, 1].mean())
 
             self.center_pub.publish(Point(x=cx, y=cy, z=0.0))
             self.pub_color.publish(Float64(data=1.0))
             self.get_logger().info(
-                f'检测到二维码: "{data}", 中心=({cx:.0f}, {cy:.0f})',
+                f'检测到二维码, 中心=({cx:.0f}, {cy:.0f})',
                 throttle_duration_sec=1.0)
+
+            # 可视化：画二维码边框 + 中心
+            pts_i = pts.astype(int)
+            cv2.polylines(frame, [pts_i], True, (0, 255, 0), 2)
+            cv2.circle(frame, (int(cx), int(cy)), 5, (0, 0, 255), -1)
         else:
             # 无二维码：发布默认中心（图像中心）
             self.center_pub.publish(self.default_center)
+
+        # 显示结果（有 X 显示时）
+        try:
+            cv2.imshow('QR Detection', frame)
+            cv2.waitKey(1)
+        except Exception:
+            pass
 
 
 def main(args=None):

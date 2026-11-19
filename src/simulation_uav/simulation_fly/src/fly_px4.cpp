@@ -25,7 +25,7 @@ using namespace std::chrono_literals;
 
 
 #define BUFFER_SIZE 1024
-#define TargeyHeight 1.1
+#define TargeyHeight 1.4
 
 
 struct PidControl {
@@ -67,13 +67,13 @@ private:
 class PidRead : public rclcpp::Node { 
 public:     
     PidRead() : Node("PidRead") {         
-        pid_controller::PidParams pidparax{0.12, 0.0, 0.05, 10.0, 30, 0.0}; //静态0.1
-        pid_controller::PidParams pidparay{0.12, 0.0, 0.05, 10.0, 31, 0.0}; //静态0.1
+        pid_controller::PidParams pidparax{0.15, 0.0, 0.05, 10.0, 101, 0.0}; //静态0.1
+        pid_controller::PidParams pidparay{0.15, 0.0, 0.05, 10.0, 100, 0.0}; //静态0.1
         
         fixed_point_black_ = std::make_shared<FixedPoint>(             
             std::static_pointer_cast<rclcpp::Node>(std::shared_ptr<PidRead>(this, [](PidRead*){})),
             "/zzjnp",             
-            fixed_point::Point(640/2.0, 480/2.0),
+            fixed_point::Point(1280/2.0, 720/2.0),
             pidparax,             
             pidparay         
         );                  
@@ -275,7 +275,7 @@ private:
             }
             auto elapsed = (get_clock()->now() - delay_start_time).seconds();
             if (elapsed >= 1.0) {
-                flight_state = FlightState::TRACKING;
+                flight_state = FlightState::FLYING;
                 delay_started = false;
                 hight_ok = true;
                 target_position = current_pose;
@@ -310,11 +310,22 @@ private:
          RCLCPP_INFO(get_logger(), "掉高");
            fly_dianvv_xy(current_pose.pose.position.x, current_pose.pose.position.y, TargeyHeight, 0);
        }
-       if((fabs(pid.x)+fabs(pid.y))<0.02  && pid.x!=0 && pid.y!=0){
+       if((fabs(pid.x)+fabs(pid.y))<=0.0  && pid.x!=0 && pid.y!=0){
            if(!pid_ok){
                pid_ok = true;
-                RCLCPP_INFO(get_logger(), "位置调整完成");
-                flight_state = FlightState::LANDING;
+                RCLCPP_INFO(get_logger(), "位置调整完成，悬停2s后降落");
+           }
+           // 悬停 2s（保持当前位置），然后降落
+           fly_dianvv_xy(current_pose.pose.position.x, current_pose.pose.position.y, TargeyHeight, 0);
+           if(!delay_started){
+               delay_start_time = get_clock()->now();
+               delay_started = true;
+           }
+           auto elapsed = (get_clock()->now() - delay_start_time).seconds();
+           if(elapsed >= 2.0){
+               delay_started = false;
+               RCLCPP_INFO(get_logger(), "开始降落");
+               //flight_state = FlightState::LANDING;
            }
         }
     }
