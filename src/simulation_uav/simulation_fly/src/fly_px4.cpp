@@ -67,8 +67,8 @@ private:
 class PidRead : public rclcpp::Node { 
 public:     
     PidRead() : Node("PidRead") {         
-        pid_controller::PidParams pidparax{0.15, 0.0, 0.05, 10.0, 101, 0.0}; //静态0.1
-        pid_controller::PidParams pidparay{0.15, 0.0, 0.05, 10.0, 100, 0.0}; //静态0.1
+        pid_controller::PidParams pidparax{0.18, 0.04, 0.07, 10.0, 101, 0.0}; //静态0.1
+        pid_controller::PidParams pidparay{0.18, 0.0, 0.07, 10.0, 100, 0.0}; //静态0.1
         
         fixed_point_black_ = std::make_shared<FixedPoint>(             
             std::static_pointer_cast<rclcpp::Node>(std::shared_ptr<PidRead>(this, [](PidRead*){})),

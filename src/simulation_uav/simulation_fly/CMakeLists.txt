@@ -23,6 +23,7 @@ find_package(tf2_ros REQUIRED)
 find_package(nav_msgs REQUIRED)
 find_package(quadrotor_msgs REQUIRED)
 find_package(serial REQUIRED)
+find_package(Eigen3 REQUIRED)
 
 # gz-transport 版本回退链：优先 Harmonic=13，其次 Garden=12，最后未版本化
 find_package(gz-transport13 QUIET)
@@ -67,6 +68,7 @@ ament_target_dependencies(sim_common rclcpp std_msgs serial)
 
 # 可执行文件
 add_executable(fly_px4 src/fly_px4.cpp)
+add_executable(fly_mpc src/fly_mpc.cpp)
 add_executable(fuck_mid360 src/fuck_mid360.cpp)
 add_executable(camer_bridge src/camer_bridge.cpp)
 add_executable(time_bridge src/time_bridge.cpp)
@@ -78,6 +80,12 @@ ament_target_dependencies(fly_px4
   tf2 tf2_geometry_msgs tf2_ros serial nav_msgs
 )
 target_link_libraries(fly_px4 sim_common)
+
+# fly_mpc 依赖（MPC 追踪，用 Eigen）
+ament_target_dependencies(fly_mpc
+  rclcpp geometry_msgs mavros_msgs std_msgs
+)
+target_include_directories(fly_mpc PRIVATE ${EIGEN3_INCLUDE_DIRS})
 
 # fuck_mid360 依赖
 ament_target_dependencies(fuck_mid360
@@ -106,6 +114,7 @@ target_link_libraries(camer_bridge ${GZ_TRANSPORT_LIB})
 # 安装目标
 install(TARGETS
   fly_px4
+  fly_mpc
   fuck_mid360
   camer_bridge
   time_bridge
