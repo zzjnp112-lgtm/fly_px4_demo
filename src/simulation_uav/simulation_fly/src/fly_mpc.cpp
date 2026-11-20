@@ -12,7 +12,7 @@
 
 using namespace std::chrono_literals;
 
-#define TargeyHeight 1.5   // 追踪/悬停高度 (m)
+#define TargeyHeight 1.6   // 追踪/悬停高度 (m)
 #define TargeySpeed  0.5   // 起飞上升速度 (m/s)
 
 // ============================================================================
@@ -125,11 +125,37 @@ public:
         qr_sub_ = create_subscription<geometry_msgs::msg::Point>(
             "/zzjnp", 10, [this](const geometry_msgs::msg::Point::SharedPtr m){ qr_ = *m; });
 
-        // MPC 参数：像素/米 = fx/高度 ≈ 685.9/1.5 ≈ 457
+        // ============================================================
+        // MPC 调参指南
+        //   MpcController(dt, px_per_m, q_e, q_i, r, vmax)
+        // ------------------------------------------------------------
+        // dt      = 控制周期(秒)，固定 0.02（20ms 定时器），一般不用改
+        // px_per_m= 像素/米 = fx/高度 ≈ 685.9/1.5 ≈ 457，物理换算量，一般不用改
+        //
+        // q_e（偏移权重，当前 0.55）：追得有多"狠"
+        //   调大 → 追踪快、贴得紧，但容易来回摆动/震荡
+        //   调小 → 更稳、更平缓，但追得慢、滞后大
+        //
+        // q_i（积分权重，当前 0.1）：消除匀速目标的恒定残差
+        //   调大 → 残差消得快、能回到正上方，但容易超调/震荡
+        //   调小 → 残差消得慢，但更稳
+        //
+        // r（速度权重，当前 0.8）：阻尼/平滑
+        //   调大 → 阻尼强、摆动小、速度变化平缓（治"来回摆"的首选）
+        //   调小 → 更激进、响应快，但容易摆
+        //
+        // vmax（速度限幅，当前 1.5 m/s）：最大速度
+        //   调大 → 追得更快（但更剧烈）；调小 → 更稳但慢
+        // ------------------------------------------------------------
+        // 常见症状 → 调法：
+        //   来回摆动/震荡      → r 调大（0.8→1.5），或 q_e 调小（0.55→0.3）
+        //   追不上、滞后大     → q_e 调大（0.55→1.0）
+        //   有恒定残差(偏一边) → q_i 调大（0.1→0.3）
+        //   速度突变太猛       → vmax 调小（1.5→0.5），或 r 调大
+        // ============================================================
         const double px_per_m = 685.9 / TargeyHeight;
-        // 每轴 MPC：q_e=1(偏移权重) q_i=0.15(积分权重) r=0.08(速度权重) vmax=0.5
-        mpc_x_ = std::make_shared<MpcController>(0.02, px_per_m, 0.9, 0.1, 0.65, 1.5);
-        mpc_y_ = std::make_shared<MpcController>(0.02, px_per_m, 0.9, 0.1, 0.65, 1.5);
+        mpc_x_ = std::make_shared<MpcController>(0.02, px_per_m, 0.65, 0.11, 1.4, 1.5);
+        mpc_y_ = std::make_shared<MpcController>(0.02, px_per_m, 0.65, 0.11, 1.4, 1.5);
 
         timer_ = create_wall_timer(20ms, std::bind(&Task::run, this));
     }
@@ -197,7 +223,7 @@ private:
             fly_pos(0.0, 0.0, TargeyHeight, 0.0);
         } else {
             if (!delay_started_) { delay_start_time_ = now(); delay_started_ = true; }
-            if ((now() - delay_start_time_).seconds() >= 1.0) {
+            if ((now() - delay_start_time_).seconds() >= 4.0) {
                 delay_started_ = false; hight_ok_ = true;
                 state_ = FlightState::FLYING;
                 RCLCPP_INFO(get_logger(), "起飞完成");
@@ -234,7 +260,7 @@ private:
         // 目标接近中心 → 悬停保持（暂不降落）
         bool centered = (std::fabs(e_x) < 8.0 && std::fabs(e_y) < 8.0);
         if (centered) {
-            //fly_pos(pose.pose.position.x, pose.pose.position.y, TargeyHeight, 0.0);
+            fly_pos(pose.pose.position.x, pose.pose.position.y, TargeyHeight, 0.0);
             RCLCPP_INFO_THROTTLE(get_logger(), *get_clock(), 1000, "已对准，悬停保持");
             return;
         }

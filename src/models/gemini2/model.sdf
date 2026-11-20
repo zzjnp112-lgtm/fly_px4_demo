@@ -50,7 +50,7 @@
           </clip>
         </camera>
         <always_on>1</always_on>
-        <update_rate>30</update_rate>
+        <update_rate>60</update_rate>
         <visualize>true</visualize>
         <topic>gemini2/rgb/image</topic>
       </sensor>

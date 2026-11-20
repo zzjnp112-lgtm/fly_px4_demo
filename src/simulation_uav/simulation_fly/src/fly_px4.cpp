@@ -25,7 +25,7 @@ using namespace std::chrono_literals;
 
 
 #define BUFFER_SIZE 1024
-#define TargeyHeight 1.4
+#define TargeyHeight 1.5
 
 
 struct PidControl {
@@ -67,8 +67,8 @@ private:
 class PidRead : public rclcpp::Node { 
 public:     
     PidRead() : Node("PidRead") {         
-        pid_controller::PidParams pidparax{0.18, 0.04, 0.07, 10.0, 101, 0.0}; //静态0.1
-        pid_controller::PidParams pidparay{0.18, 0.0, 0.07, 10.0, 100, 0.0}; //静态0.1
+        pid_controller::PidParams pidparax{0.18, 0.06, 0.07, 10.0, 101, 0.0}; //静态0.1
+        pid_controller::PidParams pidparay{0.18, 0.06, 0.07, 10.0, 100, 0.0}; //静态0.1
         
         fixed_point_black_ = std::make_shared<FixedPoint>(             
             std::static_pointer_cast<rclcpp::Node>(std::shared_ptr<PidRead>(this, [](PidRead*){})),
@@ -223,65 +223,56 @@ private:
     void runtask() {
         auto current_state = mavros_subscriber_->getCurrentState();
         auto current_pose = mavros_subscriber_->getCurrentPose();
-        
-        if (current_state.mode == "OFFBOARD") {
-            if (!current_state.armed && 
-                (get_clock()->now() - last_request_time > rclcpp::Duration::from_seconds(5.0))) {
-                arming_client->async_send_request(arm_cmd);
-                RCLCPP_INFO(get_logger(), "OFFBOARD mode detected - Arming vehicle");
-                armed = true;
-                last_request_time = get_clock()->now();
-            }
-        } else {
-            Arduino::led_1s();
-            sleep(1);
+
+        // 用真实 arm 状态
+        armed = current_state.armed;
+
+        // 保活（未 arm 时发位置 setpoint，维持 OFFBOARD）
+        if (!armed) {
+            target_position = current_pose;
+            target_position.pose.position.x = 0;
+            target_position.pose.position.y = 0;
+            target_position.pose.position.z = TargeyHeight;
+            local_pose_pub->publish(target_position);
         }
 
-        if (armed) {
-            switch(flight_state) {
-                case FlightState::TAKEOFF:
-                    handle_takeoff(current_pose);
-                    break;
-                case FlightState::FLYING:
-                    handle_flying(current_pose,1,0);
-                    break;
-                case FlightState::TRACKING:
-                  handle_tracking(current_pose);
-                    break;
-                case FlightState::LANDING:
-                    handle_landing(current_pose);
-                    break;
+        // 不自动切 OFFBOARD；但一旦已处于 OFFBOARD 且未 arm，自动 arm
+        if (current_state.mode == "OFFBOARD" && !current_state.armed) {
+            if (get_clock()->now() - last_request_time > rclcpp::Duration::from_seconds(2.0)) {
+                arming_client->async_send_request(arm_cmd);
+                RCLCPP_INFO(get_logger(), "OFFBOARD mode detected - Arming vehicle");
+                last_request_time = get_clock()->now();
             }
+        }
+
+        if (!armed) return;
+
+        switch(flight_state) {
+            case FlightState::TAKEOFF:
+                handle_takeoff(current_pose);
+                break;
+            case FlightState::FLYING:
+                handle_flying(current_pose,1,0);
+                break;
+            case FlightState::TRACKING:
+              handle_tracking(current_pose);
+                break;
+            case FlightState::LANDING:
+                handle_landing(current_pose);
+                break;
         }
     }
 
     void handle_takeoff(const geometry_msgs::msg::PoseStamped& current_pose) {
-        if (current_pose.pose.position.z < (TargeyHeight - 0.05)) {
-            if (cur_state == 0) {
-                target_position = current_pose;
-                target_position.pose.position.x = 0;
-                target_position.pose.position.y = 0;
-                target_position.pose.position.z = TargeyHeight;
-                cur_state = 1;
-            }
-            RCLCPP_INFO(get_logger(), "高度: %lf", current_pose.pose.position.z);
-            if (!hight_ok) {
-                local_pose_pub->publish(target_position);
-            }
+        double z = current_pose.pose.position.z;
+        if (z < TargeyHeight - 0.05) {
+            // 打点：飞向 (0,0,TargeyHeight)，由位置控制器负责爬升
+            fly_dianvv_xy(0.0, 0.0, TargeyHeight, 0.0);
         } else {
-            if (!delay_started) {
-                delay_start_time = get_clock()->now();
-                delay_started = true;
-            }
-            auto elapsed = (get_clock()->now() - delay_start_time).seconds();
-            if (elapsed >= 1.0) {
+            if (!delay_started) { delay_start_time = get_clock()->now(); delay_started = true; }
+            if ((get_clock()->now() - delay_start_time).seconds() >= 3.0) {
+                delay_started = false; hight_ok = true;
                 flight_state = FlightState::FLYING;
-                delay_started = false;
-                hight_ok = true;
-                target_position = current_pose;
-                target_position.pose.position.x = 0;
-                target_position.pose.position.y = 0;
-                target_position.pose.position.z = TargeyHeight;
                 RCLCPP_INFO(get_logger(), "起飞完成");
             }
         }
